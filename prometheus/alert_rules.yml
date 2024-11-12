@@ -1,0 +1,32 @@
+groups:
+  - name: petclinic_alerts
+    rules:
+      # CPU Usage Alert
+      - alert: HighCPUUsage
+        expr: (process_cpu_usage{application="petclinic"} * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU Usage on PetClinic"
+          description: "PetClinic CPU usage has been above 80% for more than 5 minutes (current value: {{ $value }}%)"
+
+      # Memory Usage Alert
+      - alert: HighMemoryUsage
+        expr: (sum(jvm_memory_used_bytes{application="petclinic"}) / sum(jvm_memory_max_bytes{application="petclinic"}) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Memory Usage on PetClinic"
+          description: "PetClinic Memory usage has been above 80% for more than 5 minutes (current value: {{ $value }}%)"
+
+      # Heap Memory Alert
+      - alert: HighHeapMemoryUsage
+        expr: (sum(jvm_memory_used_bytes{application="petclinic", area="heap"}) / sum(jvm_memory_max_bytes{application="petclinic", area="heap"}) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Heap Memory Usage on PetClinic"
+          description: "PetClinic Heap Memory usage has been above 80% for more than 5 minutes (current value: {{ $value }}%)"
