@@ -15,6 +15,9 @@
  */
 package org.springframework.samples.petclinic.owner;
 
+import io.micrometer.core.annotation.Timed;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.util.List;
 import java.util.Optional;
 
@@ -52,10 +55,12 @@ class OwnerController {
 	private final OwnerRepository owners;
 
 	private final PetClinicMetrics metrics;
+	private final MeterRegistry meterRegistry;
 
-	public OwnerController(OwnerRepository clinicService, PetClinicMetrics metrics) {
+	public OwnerController(OwnerRepository clinicService, PetClinicMetrics metrics, MeterRegistry meterRegistry) {
 		this.owners = clinicService;
 		this.metrics = metrics;
+		this.meterRegistry = meterRegistry;
 	}
 
 	@InitBinder
@@ -102,8 +107,17 @@ class OwnerController {
 			owner.setLastName(""); // empty string signifies broadest possible search
 		}
 
+		Timer.Sample sample = Timer.start(meterRegistry);
+
 		// find owners by last name
 		Page<Owner> ownersResults = findPaginatedForOwnersLastName(page, owner.getLastName());
+
+		sample.stop(Timer.builder("petclinic.search")
+			.description("Time taken to search for owners")
+			.publishPercentiles(.5, .95, .99)
+			.tags("flow", "owner")
+			.register(meterRegistry));
+
 		if (ownersResults.isEmpty()) {
 			// no owners found
 			result.rejectValue("lastName", "notFound", "not found");
