@@ -3,62 +3,68 @@ package org.springframework.samples.petclinic.system;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.TimeUnit;
 
 @Aspect
 @Component
 public class DatabaseMonitoringAspect {
 
 	private final MeterRegistry meterRegistry;
-	private final Counter slowQueriesCounter;
-	private final Timer queryTimer;
-
-	// Threshold for slow queries in seconds
-	private static final double SLOW_QUERY_THRESHOLD = 0.01;
+	private static final double SLOW_QUERY_THRESHOLD = 0.1;
 
 	public DatabaseMonitoringAspect(MeterRegistry meterRegistry) {
 		this.meterRegistry = meterRegistry;
-
-		this.slowQueriesCounter = Counter.builder("petclinic.database.slow_queries.total")
-			.description("Total number of database queries that took longer than " + SLOW_QUERY_THRESHOLD + "s")
-			.register(meterRegistry);
-
-		this.queryTimer = Timer.builder("petclinic.database.query.duration")
-			.description("Database query execution time")
-			.publishPercentiles(0.5, 0.95, 0.99)
-			.register(meterRegistry);
 	}
 
 	@Around("execution(* org.springframework.samples.petclinic..*Repository.*(..))")
 	public Object monitorDatabaseCalls(ProceedingJoinPoint joinPoint) throws Throwable {
-		long startTime = System.nanoTime();
+		String className = joinPoint.getTarget().getClass().getSimpleName();
+		String methodName = joinPoint.getSignature().getName();
+
+		Timer timer = Timer.builder("petclinic.repository.execution")
+			.tag("class", className)
+			.tag("method", methodName)
+			.description("Repository method execution time")
+			.publishPercentileHistogram()
+			.publishPercentiles(0.5, 0.95, 0.99) // Publish these percentiles
+			.minimumExpectedValue(Duration.ofMillis(1))
+			.maximumExpectedValue(Duration.ofSeconds(10))
+			.serviceLevelObjectives(
+				Duration.ofMillis(50),
+				Duration.ofMillis(100),
+				Duration.ofMillis(200),
+				Duration.ofMillis(500),
+				Duration.ofSeconds(1)
+			)
+			.register(meterRegistry);
 
 		try {
-			return joinPoint.proceed();
-		} finally {
-			long duration = System.nanoTime() - startTime;
-			double durationInSeconds = duration / 1_000_000_000.0;
+			Timer.Sample sample = Timer.start(meterRegistry);
+			Object result = joinPoint.proceed();
+			double durationSeconds = sample.stop(timer);
 
-			// Record the query duration
-			queryTimer.record(duration, TimeUnit.NANOSECONDS);
-
-			// If query took longer than threshold, increment slow query counter
-			if (durationInSeconds > SLOW_QUERY_THRESHOLD) {
-				slowQueriesCounter.increment();
-
-				// Add detailed metric for this specific slow query
-				Counter.builder("petclinic.database.slow_queries.by.method")
-					.tag("class", joinPoint.getTarget().getClass().getSimpleName())
-					.tag("method", joinPoint.getSignature().getName())
-					.tag("duration", String.format("%.2fs", durationInSeconds))
+			if (durationSeconds > SLOW_QUERY_THRESHOLD) {
+				Counter.builder("petclinic.repository.slow.executions")
+					.tag("class", className)
+					.tag("method", methodName)
 					.register(meterRegistry)
 					.increment();
 			}
+
+			return result;
+		} catch (Throwable e) {
+			Counter.builder("petclinic.repository.errors")
+				.tag("class", className)
+				.tag("method", methodName)
+				.tag("exception", e.getClass().getSimpleName())
+				.register(meterRegistry)
+				.increment();
+			throw e;
 		}
 	}
 }
