@@ -23,6 +23,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.samples.petclinic.system.PetClinicMetrics;
 import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.WebDataBinder;
@@ -94,6 +95,7 @@ class OwnerController {
 		return "owners/findOwners";
 	}
 
+	@Transactional(readOnly = true)  // Add this annotation
 	@GetMapping("/owners")
 	public String processFindForm(@RequestParam(defaultValue = "1") int page, Owner owner, BindingResult result,
 			Model model) {
@@ -104,8 +106,14 @@ class OwnerController {
 
 		// find owners by last name
 		Page<Owner> ownersResults = findPaginatedForOwnersLastName(page, owner.getLastName());
+
+		// This will trigger the N+1 problem - accessing pets for each owner
+		for (Owner ownerResult : ownersResults.getContent()) {
+			// Force loading of pets
+			ownerResult.getPets().size();
+		}
+
 		if (ownersResults.isEmpty()) {
-			// no owners found
 			result.rejectValue("lastName", "notFound", "not found");
 			return "owners/findOwners";
 		}

@@ -57,10 +57,18 @@ public interface OwnerRepository extends JpaRepository<Owner, Integer> {
 	 * @return a Collection of matching {@link Owner}s (or an empty Collection if none
 	 * found)
 	 */
-	@Query("SELECT DISTINCT owner FROM Owner owner left join  owner.pets WHERE owner.lastName LIKE :lastName% ")
+	@Query("SELECT DISTINCT owner FROM Owner owner LEFT JOIN FETCH owner.pets WHERE owner.lastName LIKE :lastName%")
 	@Transactional(readOnly = true)
-	Page<Owner> findByLastName(@Param("lastName") String lastName, Pageable pageable);
+	List<Owner> findByLastNameAndLoadPets(@Param("lastName") String lastName);
 
+	default Page<Owner> findByLastName(String lastName, Pageable pageable) {
+		// This will still cause N+1 queries but won't throw LazyInitializationException
+		List<Owner> owners = findByLastNameAndLoadPets(lastName);
+		int start = (int) pageable.getOffset();
+		int end = Math.min((start + pageable.getPageSize()), owners.size());
+		return new org.springframework.data.domain.PageImpl<>(
+			owners.subList(start, end), pageable, owners.size());
+	}
 	/**
 	 * Retrieve an {@link Owner} from the data store by id.
 	 * <p>
