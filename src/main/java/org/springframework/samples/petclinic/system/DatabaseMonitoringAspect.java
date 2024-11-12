@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 public class DatabaseMonitoringAspect {
 
 	private final MeterRegistry meterRegistry;
-	private static final double SLOW_QUERY_THRESHOLD = 0.1;
+	private static final double SLOW_QUERY_THRESHOLD = 0.05;
 
 	public DatabaseMonitoringAspect(MeterRegistry meterRegistry) {
 		this.meterRegistry = meterRegistry;
@@ -23,10 +23,10 @@ public class DatabaseMonitoringAspect {
 
 	@Around("execution(* org.springframework.samples.petclinic..*Repository.*(..))")
 	public Object monitorDatabaseCalls(ProceedingJoinPoint joinPoint) throws Throwable {
-		String className = joinPoint.getTarget().getClass().getSimpleName();
+		String className = joinPoint.getSignature().getDeclaringType().getSimpleName();
 		String methodName = joinPoint.getSignature().getName();
 
-		Timer timer = Timer.builder("petclinic.repository.execution")
+		Timer timer = Timer.builder("db.repository.execution")
 			.tag("class", className)
 			.tag("method", methodName)
 			.description("Repository method execution time")
@@ -35,10 +35,10 @@ public class DatabaseMonitoringAspect {
 			.minimumExpectedValue(Duration.ofMillis(1))
 			.maximumExpectedValue(Duration.ofSeconds(10))
 			.serviceLevelObjectives(
+				Duration.ofMillis(1),
+				Duration.ofMillis(10),
+				Duration.ofMillis(20),
 				Duration.ofMillis(50),
-				Duration.ofMillis(100),
-				Duration.ofMillis(200),
-				Duration.ofMillis(500),
 				Duration.ofSeconds(1)
 			)
 			.register(meterRegistry);
@@ -49,7 +49,7 @@ public class DatabaseMonitoringAspect {
 			double durationSeconds = sample.stop(timer);
 
 			if (durationSeconds > SLOW_QUERY_THRESHOLD) {
-				Counter.builder("petclinic.repository.slow.executions")
+				Counter.builder("db.repository.slow.executions")
 					.tag("class", className)
 					.tag("method", methodName)
 					.register(meterRegistry)
@@ -58,7 +58,7 @@ public class DatabaseMonitoringAspect {
 
 			return result;
 		} catch (Throwable e) {
-			Counter.builder("petclinic.repository.errors")
+			Counter.builder("db.repository.errors")
 				.tag("class", className)
 				.tag("method", methodName)
 				.tag("exception", e.getClass().getSimpleName())
