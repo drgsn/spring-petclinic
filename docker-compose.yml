@@ -13,13 +13,58 @@ services:
       - "./conf.d:/etc/mysql/conf.d:ro"
     profiles:
       - mysql
+
   postgres:
     image: postgres:17.0
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       - POSTGRES_PASSWORD=petclinic
       - POSTGRES_USER=petclinic
       - POSTGRES_DB=petclinic
     profiles:
       - postgres
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"  # UI
+      - "14250:14250"  # gRPC
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+      - "6831:6831/udp"  # jaeger agent
+    restart: unless-stopped
+
+volumes:
+  grafana-storage:
